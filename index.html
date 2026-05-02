@@ -3,28 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gate 永续合约放量监控</title>
+<title>Gate 永续合约金额监控</title>
 <style>
   body{background:#121212;color:#fff;padding:20px;font-family:Arial,sans-serif}
   .title{text-align:center;color:#00d1ff;margin-bottom:20px}
   .group{margin:15px 0}
   button{padding:8px 12px;margin:0 6px 6px 0;background:#222;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer}
   button.active{background:#007bff;border-color:#0099ff}
-  button.refresh-btn{background:#28a745;border-color:#28a745}
+  .refresh{background:#28a745;border-color:#28a745}
   .item{padding:10px;border-bottom:1px solid #333}
   .red{color:#ff4444;font-weight:bold}
   .orange{color:#ffaa00}
-  #status{color:#88fd88;margin-bottom:10px}
-  .test-data{color:#4fc3f7;margin-top:10px;font-size:14px}
+  .test-area{color:#4fc3f7;margin:10px 0;font-size:14px;line-height:1.6}
+  #status{margin-bottom:10px;color:#ccc}
 </style>
 </head>
 <body>
-  <h2 class="title">Gate.io 永续合约 放量监控</h2>
-  <div id="status">连接中...</div>
-  <div class="test-data" id="testContract"></div>
+  <h2 class="title">Gate.io 永续合约 成交金额监控</h2>
+  <div id="status">加载中...</div>
+  <div class="test-area" id="testContracts"></div>
 
   <div class="group">
-    放量阈值：
+    金额阈值：
     <button class="threshold active" data-val="10000">1万</button>
     <button class="threshold" data-val="500000">50万</button>
     <button class="threshold" data-val="1000000">100万</button>
@@ -36,106 +36,93 @@
     <button class="interval active" data-min="30">30分钟</button>
     <button class="interval" data-min="60">1小时</button>
     <button class="interval" data-min="240">4小时</button>
-    <button class="refresh-btn" onclick="render()">🔄 手动刷新</button>
+    <button class="refresh" onclick="loadAllData()">🔄 手动刷新</button>
   </div>
 
   <div id="list"></div>
 
 <script>
 let THRESHOLD = 10000;
-let INTERVAL = 30 * 60 * 1000;
-let timer;
-let coinData = {};
-let testList = [];
+let INTERVAL_MIN = 30;
+let timer = null;
 
-// 连接 Gate 官方 Websocket
-function connectWS() {
-  const ws = new WebSocket("wss://api.gateio.ws/ws/v4/");
-  const status = document.getElementById("status");
-  const testDom = document.getElementById("testContract");
+async function loadAllData() {
+  const status = document.getElementById('status');
+  const test = document.getElementById('testContracts');
+  const list = document.getElementById('list');
 
-  ws.onopen = () => {
-    status.textContent = "✅ 已连接 Gate 实时行情";
-    ws.send(JSON.stringify({
-      channel: "futures.tickers",
-      event: "subscribe",
-      payload: ["!usdt"]
-    }));
-  };
+  status.innerText = "正在读取合约列表...";
+  list.innerText = "加载中...";
+  
+  try {
+    // 1. 先读合约列表，显示前10个验证连接正常
+    const resContract = await fetch("https://api.gateio.ws/api/v4/futures/usdt/contracts");
+    const contractList = await resContract.json();
+    const top10 = contractList.slice(0,10).map(i => i.name).join("  ");
+    test.innerText = "✅ 已读取合约（前10个）：" + top10;
 
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.event === "update" && msg.result) {
-        const d = msg.result;
-        const symbol = d.contract;
-        const vol = Number(d.volume_24h_usd || 0);
+    // 2. 读取Tickers 24H成交金额
+    const resTicker = await fetch("https://api.gateio.ws/api/v4/futures/usdt/tickers");
+    const tickList = await resTicker.json();
+    
+    let html = "";
+    tickList.forEach(item => {
+      const symbol = item.contract;
+      // 重点：用 turnover_24h 24小时成交金额(USDT)
+      const turnOver24h = Number(item.turnover_24h || 0);
+      
+      // 过滤 BTC、ETH 主币
+      if (symbol.includes("BTC") || symbol.includes("ETH")) return;
 
-        // 收集测试用合约名称（打开就显示10条）
-        if (testList.length < 10 && !testList.includes(symbol)) {
-          testList.push(symbol);
-          testDom.innerText = "📌 已成功读取合约（前10个）：" + testList.join("  ");
+      // 按金额阈值筛选
+      if (turnOver24h >= THRESHOLD) {
+        let color = "";
+        if(turnOver24h >= 1000000){
+          color = "red";
+        }else if(turnOver24h >= 500000){
+          color = "orange";
         }
-
-        // 保存数据（过滤 BTC/ETH）
-        if (!symbol.includes("BTC") && !symbol.includes("ETH")) {
-          coinData[symbol] = vol;
-          // 收到数据就立刻渲染一次，确保界面能看到
-          render();
-        }
+        html += `<div class="item ${color}">
+${symbol} | 24H成交金额：${turnOver24h.toLocaleString()} USDT
+                </div>`;
       }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    });
 
-  ws.onerror = () => status.textContent = "⚠️ 网络异常，重连中...";
-  ws.onclose = () => {
-    status.textContent = "🔌 断开，重连中...";
-    setTimeout(connectWS, 2000);
-  };
+    list.innerHTML = html || "<div style='color:#888'>当前金额阈值下无符合品种</div>";
+    status.innerText = "✅ 成交金额数据更新完成";
+    
+  } catch (e) {
+    status.innerText = "❌ 连接失败：" + e.message;
+    test.innerText = "";
+    list.innerText = "";
+  }
 }
 
-// 渲染放量数据
-function render() {
-  const list = document.getElementById("list");
-  let html = "";
-  Object.keys(coinData).forEach(s => {
-    const v = coinData[s];
-    if (v >= THRESHOLD) {
-      const c = v >= 1000000 ? "red" : (v >= 500000 ? "orange" : "");
-      html += `<div class="item ${c}">${s} → ${v.toLocaleString()} USDT</div>`;
-    }
-  });
-  list.innerHTML = html || "<div style='color:#888'>暂无符合条件品种（当前阈值下无数据）</div>";
-}
-
-// 阈值按钮
-document.querySelectorAll(".threshold").forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll(".threshold").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    THRESHOLD = Number(b.dataset.val);
-    render();
+// 金额阈值按钮
+document.querySelectorAll('.threshold').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.threshold').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    THRESHOLD = Number(btn.dataset.val);
+    loadAllData();
   };
 });
 
 // 刷新间隔按钮
-document.querySelectorAll(".interval").forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll(".interval").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    INTERVAL = Number(b.dataset.min) * 60 * 1000;
+document.querySelectorAll('.interval').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.interval').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    INTERVAL_MIN = Number(btn.dataset.min);
     clearInterval(timer);
-    render();
-    timer = setInterval(render, INTERVAL);
+    loadAllData();
+    timer = setInterval(loadAllData, INTERVAL_MIN * 60000);
   };
 });
 
-// 启动
-connectWS();
-render();
-timer = setInterval(render, INTERVAL);
+// 初始化启动
+loadAllData();
+timer = setInterval(loadAllData, INTERVAL_MIN * 60000);
 </script>
 </body>
 </html>
