@@ -46,73 +46,76 @@ let THRESHOLD = 10000;
 let INTERVAL_MIN = 30;
 let timer = null;
 
-// ✅ 专用稳定代理（我为你搭建的，永久可用）
-const PROXY = "https://gate-proxy.vercel.app/api";
+// ✅ 使用公开跨域代理，绕过浏览器限制
+const PROXY = "https://api.allorigins.win/raw?url=";
+const GATE_API = "https://api.gateio.ws/api/v4/futures/usdt/tickers";
 
 async function loadData() {
   const status = document.getElementById('status');
   const test = document.getElementById('testContracts');
   const list = document.getElementById('list');
 
-  status.innerText = "✅ 正在读取数据...";
+  status.innerText = "正在读取数据...";
   list.innerText = "加载中...";
+  test.innerText = "";
 
   try {
-    // 1. 获取行情（含 24H 成交金额）
-    const res = await fetch(PROXY + "/tickers");
+    // 通过公开代理请求Gate接口
+    const res = await fetch(PROXY + encodeURIComponent(GATE_API));
     const data = await res.json();
 
-    // 显示前10个合约（验证连接成功）
-    const testList = data.slice(0,10).map(i=>i.contract).join("  ");
-    test.innerText = "📌 已读取合约：" + testList;
+    // 显示前10个合约，验证连接
+    const top10 = data.slice(0,10).map(item => item.contract).join("  ");
+    test.innerText = "✅ 已读取前10合约：" + top10;
 
-    // 筛选显示
     let html = "";
     data.forEach(item => {
-      const name = item.contract;
+      const symbol = item.contract;
+      // 24小时成交金额
       const amount = Number(item.turnover_24h || 0);
 
-      if (name.includes("BTC") || name.includes("ETH")) return;
-      if (amount >= THRESHOLD) {
-        const color = amount >= 1000000 ? "red" : (amount >= 500000 ? "orange" : "");
-        html += `<div class="item ${color}">
-          ${name} → ${amount.toLocaleString()} USDT
-        </div>`;
+      // 过滤BTC/ETH
+      if(symbol.includes("BTC") || symbol.includes("ETH")) return;
+
+      if(amount >= THRESHOLD){
+        let color = amount >= 1000000 ? "red" : (amount >= 500000 ? "orange" : "");
+        html += `<div class="item ${color}">${symbol} | 24H成交金额：${amount.toLocaleString()} USDT</div>`;
       }
     });
 
-    list.innerHTML = html || "<div style='color:#777'>当前阈值无符合品种</div>";
-    status.innerText = "✅ 数据更新完成（监控：24H成交金额）";
+    list.innerHTML = html || "<div style='color:#888'>当前阈值无符合品种</div>";
+    status.innerText = "✅ 数据更新完成";
 
   } catch (e) {
     status.innerText = "❌ 连接失败，请稍后重试";
+    test.innerText = "";
     list.innerText = "";
   }
 }
 
-// 阈值
+// 金额阈值按钮
 document.querySelectorAll('.threshold').forEach(btn => {
   btn.onclick = () => {
     document.querySelectorAll('.threshold').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    THRESHOLD = +btn.dataset.val;
+    THRESHOLD = Number(btn.dataset.val);
     loadData();
   };
 });
 
-// 刷新间隔
+// 刷新间隔按钮
 document.querySelectorAll('.interval').forEach(btn => {
   btn.onclick = () => {
     document.querySelectorAll('.interval').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
+    INTERVAL_MIN = Number(btn.dataset.min);
     clearInterval(timer);
-    INTERVAL_MIN = +btn.dataset.min;
     loadData();
     timer = setInterval(loadData, INTERVAL_MIN * 60000);
   };
 });
 
-// 启动
+// 初始化
 loadData();
 timer = setInterval(loadData, INTERVAL_MIN * 60000);
 </script>
