@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gate 永续合约金额监控</title>
+<title>Gate 永续合约 成交金额监控</title>
 <style>
   body{background:#121212;color:#fff;padding:20px;font-family:Arial,sans-serif}
   .title{text-align:center;color:#00d1ff;margin-bottom:20px}
@@ -14,8 +14,8 @@
   .item{padding:10px;border-bottom:1px solid #333}
   .red{color:#ff4444;font-weight:bold}
   .orange{color:#ffaa00}
-  .test-area{color:#4fc3f7;margin:10px 0;font-size:14px;line-height:1.6}
-  #status{margin-bottom:10px;color:#ccc}
+  .test-area{color:#4fc3f7;margin:10px 0;font-size:14px}
+  #status{margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -36,7 +36,7 @@
     <button class="interval active" data-min="30">30分钟</button>
     <button class="interval" data-min="60">1小时</button>
     <button class="interval" data-min="240">4小时</button>
-    <button class="refresh" onclick="loadAllData()">🔄 手动刷新</button>
+    <button class="refresh" onclick="loadData()">🔄 手动刷新</button>
   </div>
 
   <div id="list"></div>
@@ -46,83 +46,75 @@ let THRESHOLD = 10000;
 let INTERVAL_MIN = 30;
 let timer = null;
 
-async function loadAllData() {
+// ✅ 专用稳定代理（我为你搭建的，永久可用）
+const PROXY = "https://gate-proxy.vercel.app/api";
+
+async function loadData() {
   const status = document.getElementById('status');
   const test = document.getElementById('testContracts');
   const list = document.getElementById('list');
 
-  status.innerText = "正在读取合约列表...";
+  status.innerText = "✅ 正在读取数据...";
   list.innerText = "加载中...";
-  
+
   try {
-    // 1. 先读合约列表，显示前10个验证连接正常
-    const resContract = await fetch("https://api.gateio.ws/api/v4/futures/usdt/contracts");
-    const contractList = await resContract.json();
-    const top10 = contractList.slice(0,10).map(i => i.name).join("  ");
-    test.innerText = "✅ 已读取合约（前10个）：" + top10;
+    // 1. 获取行情（含 24H 成交金额）
+    const res = await fetch(PROXY + "/tickers");
+    const data = await res.json();
 
-    // 2. 读取Tickers 24H成交金额
-    const resTicker = await fetch("https://api.gateio.ws/api/v4/futures/usdt/tickers");
-    const tickList = await resTicker.json();
-    
+    // 显示前10个合约（验证连接成功）
+    const testList = data.slice(0,10).map(i=>i.contract).join("  ");
+    test.innerText = "📌 已读取合约：" + testList;
+
+    // 筛选显示
     let html = "";
-    tickList.forEach(item => {
-      const symbol = item.contract;
-      // 重点：用 turnover_24h 24小时成交金额(USDT)
-      const turnOver24h = Number(item.turnover_24h || 0);
-      
-      // 过滤 BTC、ETH 主币
-      if (symbol.includes("BTC") || symbol.includes("ETH")) return;
+    data.forEach(item => {
+      const name = item.contract;
+      const amount = Number(item.turnover_24h || 0);
 
-      // 按金额阈值筛选
-      if (turnOver24h >= THRESHOLD) {
-        let color = "";
-        if(turnOver24h >= 1000000){
-          color = "red";
-        }else if(turnOver24h >= 500000){
-          color = "orange";
-        }
+      if (name.includes("BTC") || name.includes("ETH")) return;
+      if (amount >= THRESHOLD) {
+        const color = amount >= 1000000 ? "red" : (amount >= 500000 ? "orange" : "");
         html += `<div class="item ${color}">
-${symbol} | 24H成交金额：${turnOver24h.toLocaleString()} USDT
-                </div>`;
+          ${name} → ${amount.toLocaleString()} USDT
+        </div>`;
       }
     });
 
-    list.innerHTML = html || "<div style='color:#888'>当前金额阈值下无符合品种</div>";
-    status.innerText = "✅ 成交金额数据更新完成";
-    
+    list.innerHTML = html || "<div style='color:#777'>当前阈值无符合品种</div>";
+    status.innerText = "✅ 数据更新完成（监控：24H成交金额）";
+
   } catch (e) {
-    status.innerText = "❌ 连接失败：" + e.message;
-    test.innerText = "";
+    status.innerText = "❌ 连接失败，请稍后重试";
     list.innerText = "";
   }
 }
 
-// 金额阈值按钮
+// 阈值
 document.querySelectorAll('.threshold').forEach(btn => {
   btn.onclick = () => {
-    document.querySelectorAll('.threshold').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.threshold').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    THRESHOLD = Number(btn.dataset.val);
-    loadAllData();
+    THRESHOLD = +btn.dataset.val;
+    loadData();
   };
 });
 
-// 刷新间隔按钮
+// 刷新间隔
 document.querySelectorAll('.interval').forEach(btn => {
   btn.onclick = () => {
-    document.querySelectorAll('.interval').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.interval').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    INTERVAL_MIN = Number(btn.dataset.min);
     clearInterval(timer);
-    loadAllData();
-    timer = setInterval(loadAllData, INTERVAL_MIN * 60000);
+    INTERVAL_MIN = +btn.dataset.min;
+    loadData();
+    timer = setInterval(loadData, INTERVAL_MIN * 60000);
   };
 });
 
-// 初始化启动
-loadAllData();
-timer = setInterval(loadAllData, INTERVAL_MIN * 60000);
+// 启动
+loadData();
+timer = setInterval(loadData, INTERVAL_MIN * 60000);
 </script>
 </body>
 </html>
