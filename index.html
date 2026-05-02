@@ -10,6 +10,7 @@
   .group{margin:15px 0}
   button{padding:8px 12px;margin:0 6px 6px 0;background:#222;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer}
   button.active{background:#007bff;border-color:#0099ff}
+  button.refresh-btn{background:#28a745;border-color:#28a745}
   .item{padding:10px;border-bottom:1px solid #333}
   .red{color:#ff4444;font-weight:bold}
   .orange{color:#ffaa00}
@@ -18,7 +19,7 @@
 </style>
 </head>
 <body>
-  <h2 class="title">Gate.io 永续合约 放量监控222</h2>
+  <h2 class="title">Gate.io 永续合约 放量监控</h2>
   <div id="status">连接中...</div>
   <div class="test-data" id="testContract"></div>
 
@@ -35,6 +36,7 @@
     <button class="interval active" data-min="30">30分钟</button>
     <button class="interval" data-min="60">1小时</button>
     <button class="interval" data-min="240">4小时</button>
+    <button class="refresh-btn" onclick="render()">🔄 手动刷新</button>
   </div>
 
   <div id="list"></div>
@@ -46,7 +48,7 @@ let timer;
 let coinData = {};
 let testList = [];
 
-// 连接 Gate 官方 Websocket（无跨域，100%通）
+// 连接 Gate 官方 Websocket
 function connectWS() {
   const ws = new WebSocket("wss://api.gateio.ws/ws/v4/");
   const status = document.getElementById("status");
@@ -75,11 +77,16 @@ function connectWS() {
           testDom.innerText = "📌 已成功读取合约（前10个）：" + testList.join("  ");
         }
 
+        // 保存数据（过滤 BTC/ETH）
         if (!symbol.includes("BTC") && !symbol.includes("ETH")) {
           coinData[symbol] = vol;
+          // 收到数据就立刻渲染一次，确保界面能看到
+          render();
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   ws.onerror = () => status.textContent = "⚠️ 网络异常，重连中...";
@@ -100,7 +107,7 @@ function render() {
       html += `<div class="item ${c}">${s} → ${v.toLocaleString()} USDT</div>`;
     }
   });
-  list.innerHTML = html || "<div style='color:#888'>暂无符合条件品种</div>";
+  list.innerHTML = html || "<div style='color:#888'>暂无符合条件品种（当前阈值下无数据）</div>";
 }
 
 // 阈值按钮
