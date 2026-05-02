@@ -14,11 +14,13 @@
   .red{color:#ff4444;font-weight:bold}
   .orange{color:#ffaa00}
   #status{color:#88fd88;margin-bottom:10px}
+  .test-data{color:#4fc3f7;margin-top:10px;font-size:14px}
 </style>
 </head>
 <body>
-  <h2 class="title">Gate.io 永续合约 放量监控</h2>
+  <h2 class="title">Gate.io 永续合约 放量监控222</h2>
   <div id="status">连接中...</div>
+  <div class="test-data" id="testContract"></div>
 
   <div class="group">
     放量阈值：
@@ -42,11 +44,13 @@ let THRESHOLD = 10000;
 let INTERVAL = 30 * 60 * 1000;
 let timer;
 let coinData = {};
+let testList = [];
 
-// 实时行情（官方 Websocket，100% 能连接）
-function connectWS(){
+// 连接 Gate 官方 Websocket（无跨域，100%通）
+function connectWS() {
   const ws = new WebSocket("wss://api.gateio.ws/ws/v4/");
   const status = document.getElementById("status");
+  const testDom = document.getElementById("testContract");
 
   ws.onopen = () => {
     status.textContent = "✅ 已连接 Gate 实时行情";
@@ -58,29 +62,40 @@ function connectWS(){
   };
 
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if(msg.event === "update" && msg.result){
-      const d = msg.result;
-      const symbol = d.contract;
-      if(symbol.includes("BTC")||symbol.includes("ETH")) return;
-      coinData[symbol] = Number(d.volume_24h_usd || 0);
-    }
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.event === "update" && msg.result) {
+        const d = msg.result;
+        const symbol = d.contract;
+        const vol = Number(d.volume_24h_usd || 0);
+
+        // 收集测试用合约名称（打开就显示10条）
+        if (testList.length < 10 && !testList.includes(symbol)) {
+          testList.push(symbol);
+          testDom.innerText = "📌 已成功读取合约（前10个）：" + testList.join("  ");
+        }
+
+        if (!symbol.includes("BTC") && !symbol.includes("ETH")) {
+          coinData[symbol] = vol;
+        }
+      }
+    } catch (err) {}
   };
 
-  ws.onerror = () => status.textContent = "⚠️ 重连中...";
+  ws.onerror = () => status.textContent = "⚠️ 网络异常，重连中...";
   ws.onclose = () => {
-    status.textContent = "🔌 已断开，重连中...";
-    setTimeout(connectWS, 3000);
+    status.textContent = "🔌 断开，重连中...";
+    setTimeout(connectWS, 2000);
   };
 }
 
-// 展示数据
-function render(){
+// 渲染放量数据
+function render() {
   const list = document.getElementById("list");
   let html = "";
   Object.keys(coinData).forEach(s => {
     const v = coinData[s];
-    if(v >= THRESHOLD){
+    if (v >= THRESHOLD) {
       const c = v >= 1000000 ? "red" : (v >= 500000 ? "orange" : "");
       html += `<div class="item ${c}">${s} → ${v.toLocaleString()} USDT</div>`;
     }
@@ -88,7 +103,7 @@ function render(){
   list.innerHTML = html || "<div style='color:#888'>暂无符合条件品种</div>";
 }
 
-// 阈值
+// 阈值按钮
 document.querySelectorAll(".threshold").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".threshold").forEach(x => x.classList.remove("active"));
@@ -98,7 +113,7 @@ document.querySelectorAll(".threshold").forEach(b => {
   };
 });
 
-// 刷新间隔
+// 刷新间隔按钮
 document.querySelectorAll(".interval").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".interval").forEach(x => x.classList.remove("active"));
@@ -110,6 +125,7 @@ document.querySelectorAll(".interval").forEach(b => {
   };
 });
 
+// 启动
 connectWS();
 render();
 timer = setInterval(render, INTERVAL);
