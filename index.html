@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gate 永续合约放量监控</title>
+<style>
+  body{background:#121212;color:#fff;padding:20px;font-family:Arial}
+  .title{text-align:center;color:#00d1ff}
+  .group{margin:15px 0}
+  button{padding:8px 12px;margin:0 6px 6px 0;background:#222;color:#fff;border:1px solid #444;border-radius:6px}
+  button.active{background:#007bff}
+  .item{padding:10px;border-bottom:1px solid #333}
+  .red{color:#ff4444}
+  .orange{color:#ffaa00}
+</style>
+</head>
+<body>
+  <h2 class="title">Gate.io 永续合约 放量监控</h2>
+
+  <div class="group">
+    放量阈值：
+    <button class="threshold active" data="10000">1万</button>
+    <button class="threshold" data="500000">50万</button>
+    <button class="threshold" data="1000000">100万</button>
+  </div>
+
+  <div class="group">
+    刷新间隔：
+    <button class="interval" data="15">15分钟</button>
+    <button class="interval active" data="30">30分钟</button>
+    <button class="interval" data="60">1小时</button>
+    <button class="interval" data="240">4小时</button>
+  </div>
+
+  <div id="list"></div>
+
+<script>
+let threshold = 10000;
+let intervalMin = 30;
+let timer;
+
+async function fetchData(){
+  document.getElementById("list").innerText = "加载中...";
+  try{
+    let resp = await fetch("https://api.gateio.ws/api/v4/futures/usdt/tickers");
+    let data = await resp.json();
+    let html = "";
+    data.forEach(item=>{
+      let symbol = item.contract;
+      let vol = Number(item.volume_24h_usd || 0);
+      if(symbol.includes("BTC")||symbol.includes("ETH")) return;
+      if(vol >= threshold){
+        let cls = vol >= 1000000 ? "red" : (vol >= 500000 ? "orange" : "");
+        html += `<div class="item ${cls}">${symbol} → ${vol.toLocaleString()} USDT</div>`;
+      }
+    });
+    document.getElementById("list").innerHTML = html || "<div>暂无符合条件品种</div>";
+  }catch(e){
+    document.getElementById("list").innerText = "连接失败，请刷新重试";
+  }
+}
+
+document.querySelectorAll(".threshold").forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll(".threshold").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    threshold = Number(btn.getAttribute("data"));
+    fetchData();
+  }
+});
+
+document.querySelectorAll(".interval").forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll(".interval").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    intervalMin = Number(btn.getAttribute("data"));
+    clearInterval(timer);
+    fetchData();
+    timer = setInterval(fetchData, intervalMin * 60000);
+  }
+});
+
+fetchData();
+timer = setInterval(fetchData, intervalMin * 60000);
+</script>
+</body>
+</html>
